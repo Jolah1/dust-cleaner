@@ -37,14 +37,14 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Sweep => {
             let utxos = scanner::fetch_utxos(&client)?;
-            let (dust_utxos, _) = analyzer::classify_utxos(utxos);
+            let (dust_utxos, clean_utxos) = analyzer::classify_utxos(utxos);
         
             if dust_utxos.is_empty() {
                 println!("✅ No dust UTXOs found. Wallet is clean!");
                 return Ok(());
             }
         
-            println!("Found {} dust UTXOs to sweep:\n", dust_utxos.len());
+            println!("Found {} dust UTXOs to sweep:", dust_utxos.len());
             for utxo in &dust_utxos {
                 println!(
                     "   {} sats | {}:{}",
@@ -54,17 +54,17 @@ fn main() -> anyhow::Result<()> {
                 );
             }
         
-            let result = psbt_builder::build_sweep_psbt(&client, &dust_utxos)?;
+            let result = psbt_builder::build_sweep_psbt(&client, &dust_utxos, &clean_utxos)?;
         
             println!("\n📊 Sweep Summary:");
-            println!("   Inputs:     {} dust UTXOs", result.input_count);
-            println!("   Total dust: {} sats", result.total_sats);
+            println!("   Dust inputs:  {}", result.dust_input_count);
+            println!("   Total dust:   {} sats", result.total_dust_sats);
             println!("\n🧹 Sweep PSBT (base64):");
             println!("{}", result.psbt);
             println!("\n💡 Next steps:");
-            println!("   Inspect: bitcoin-cli decodepsbt <psbt>");
-            println!("   Sign:    bitcoin-cli walletprocesspsbt <psbt>");
-            println!("   Send:    bitcoin-cli sendrawtransaction <signed_hex>");
+            println!("   Inspect: bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass decodepsbt <psbt>");
+            println!("   Sign:    bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass walletprocesspsbt <psbt>");
+            println!("   Send:    bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass sendrawtransaction <hex>");
         }
     }
 
