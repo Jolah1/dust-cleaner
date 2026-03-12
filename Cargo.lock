@@ -234,6 +234,7 @@ dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
  "clap",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 use clap::Parser;
 use dust_cleaner::cli::{Cli, Commands};
-use dust_cleaner::{analyzer, rpc, scanner};
+use dust_cleaner::{analyzer, psbt_builder, rpc, scanner};
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -36,9 +36,37 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Commands::Sweep => {
-            println!("Sweep coming soon...");
+            let utxos = scanner::fetch_utxos(&client)?;
+            let (dust_utxos, _) = analyzer::classify_utxos(utxos);
+        
+            if dust_utxos.is_empty() {
+                println!("✅ No dust UTXOs found. Wallet is clean!");
+                return Ok(());
+            }
+        
+            println!("Found {} dust UTXOs to sweep:\n", dust_utxos.len());
+            for utxo in &dust_utxos {
+                println!(
+                    "   {} sats | {}:{}",
+                    utxo.amount.to_sat(),
+                    utxo.txid,
+                    utxo.vout
+                );
+            }
+        
+            let result = psbt_builder::build_sweep_psbt(&client, &dust_utxos)?;
+        
+            println!("\n📊 Sweep Summary:");
+            println!("   Inputs:     {} dust UTXOs", result.input_count);
+            println!("   Total dust: {} sats", result.total_sats);
+            println!("\n🧹 Sweep PSBT (base64):");
+            println!("{}", result.psbt);
+            println!("\n💡 Next steps:");
+            println!("   Inspect: bitcoin-cli decodepsbt <psbt>");
+            println!("   Sign:    bitcoin-cli walletprocesspsbt <psbt>");
+            println!("   Send:    bitcoin-cli sendrawtransaction <signed_hex>");
         }
     }
 
-    Ok(())
+    Ok(())  
 }
