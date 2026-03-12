@@ -1,0 +1,10 @@
+[package]
+name = "dust-cleaner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitcoincore-rpc = "0.19"
+bitcoin = "0.32"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
