@@ -55,7 +55,7 @@ Found 9 total UTXOs
 
 ### Sweep dust UTXOs
 ```bash
-dust-cleaner --rpc-user <user> --rpc-pass <pass> sweep
+dust-cleaner --rpc-user <username> --rpc-pass <password> sweep
 ```
 
 Example output:
