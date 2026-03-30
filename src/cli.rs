@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 
+
 #[derive(Parser)]
 #[command(
     name = "dust-cleaner",
@@ -17,6 +18,10 @@ pub struct Cli {
     /// Bitcoin Core RPC password
     #[arg(long)]
     pub rpc_pass: String,
+
+    /// Dust threshold in satoshis (UTXOs below this are considered dust)
+    #[arg(long, default_value = "1000")]
+    pub threshold: u64,
 
     #[command(subcommand)]
     pub command: Commands,
