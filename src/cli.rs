@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
 
-
 #[derive(Parser)]
 #[command(
     name = "dust-cleaner",
@@ -31,6 +30,10 @@ pub struct Cli {
 pub enum Commands {
     /// Scan wallet for dust UTXOs
     Scan,
-    /// Create a PSBT sweeping all dust UTXOs to miner fees
-    Sweep,
+    /// Create a PSBT sweeping all dust UTXOs
+    Sweep {
+        /// Preview the sweep without creating a PSBT
+        #[arg(long, default_value = "false")]
+        dry_run: bool,
+    },
 }

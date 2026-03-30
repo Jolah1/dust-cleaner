@@ -67,15 +67,15 @@ fn main() -> anyhow::Result<()> {
             println!("─────────────────────────────────────────");
         }
 
-        Commands::Sweep => {
+        Commands::Sweep { dry_run } => {
             let utxos = scanner::fetch_utxos(&client)?;
             let (dust_utxos, clean_utxos) = analyzer::classify_utxos(utxos, threshold);
-
+        
             if dust_utxos.is_empty() {
                 println!("✅ No dust UTXOs found. Wallet is clean!");
                 return Ok(());
             }
-
+        
             println!("Found {} dust UTXOs to sweep:", dust_utxos.len());
             for utxo in &dust_utxos {
                 println!(
@@ -85,9 +85,22 @@ fn main() -> anyhow::Result<()> {
                     utxo.vout
                 );
             }
-
+        
+            if dry_run {
+                let result = psbt_builder::dry_run_sweep(&dust_utxos, &clean_utxos)?;
+        
+                println!("\n🔍 Dry Run — no PSBT created\n");
+                println!("   Dust inputs:       {}", result.dust_input_count);
+                println!("   Total dust:        {} sats", result.total_dust_sats);
+                println!("   Funder UTXO:       {} sats", result.funder_sats);
+                println!("   Estimated fee:     {} sats", result.estimated_fee_sats);
+                println!("   Estimated output:  {} sats", result.estimated_output_sats);
+                println!("\n   Run without --dry-run to create the PSBT.");
+                return Ok(());
+            }
+        
             let result = psbt_builder::build_sweep_psbt(&client, &dust_utxos, &clean_utxos)?;
-
+        
             println!("\n📊 Sweep Summary:");
             println!("   Dust inputs:  {}", result.dust_input_count);
             println!("   Total dust:   {} sats", result.total_dust_sats);

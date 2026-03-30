@@ -7,6 +7,14 @@ pub struct SweepResult {
     pub total_dust_sats: u64,
 }
 
+pub struct DryRunResult {
+    pub dust_input_count: usize,
+    pub total_dust_sats: u64,
+    pub funder_sats: u64,
+    pub estimated_fee_sats: u64,
+    pub estimated_output_sats: u64,
+}
+
 pub fn build_sweep_psbt(
     client: &Client,
     dust_utxos: &[ListUnspentResultEntry],
@@ -16,15 +24,13 @@ pub fn build_sweep_psbt(
         anyhow::bail!("No dust UTXOs to sweep");
     }
 
-    // Step 1: Pick the largest clean UTXO to fund the transaction
     let funder = clean_utxos
-    .iter()
-    .max_by_key(|u| u.amount.to_sat())
-    .ok_or_else(|| anyhow::anyhow!(
-        "Cannot sweep: no clean UTXOs available to fund transaction fees.\nTip: fund your wallet first with a non-dust amount."
-    ))?;
+        .iter()
+        .max_by_key(|u| u.amount.to_sat())
+        .ok_or_else(|| anyhow::anyhow!(
+            "Cannot sweep: no clean UTXOs available to fund transaction fees.\nTip: fund your wallet first with a non-dust amount."
+        ))?;
 
-    // Step 2: Build inputs — funder first, then all dust UTXOs
     let mut all_inputs: Vec<serde_json::Value> = vec![
         serde_json::json!({
             "txid": funder.txid.to_string(),
@@ -39,18 +45,14 @@ pub fn build_sweep_psbt(
         }));
     }
 
-    // Step 3: Get a fresh address for consolidated output
     let out_address = client.get_new_address(None, None)?;
     let out_address = out_address.assume_checked();
 
-    // Step 4: Output amount = funder amount (fees subtracted automatically)
-    // We use the funder's full amount and subtract fees from it
     let funder_btc = funder.amount.to_btc();
     let outputs = serde_json::json!([{
         out_address.to_string(): format!("{:.8}", funder_btc)
     }]);
 
-    // Step 5: Create PSBT — subtract fee from output, wallet handles the rest
     let response = client.call::<serde_json::Value>(
         "walletcreatefundedpsbt",
         &[
@@ -75,5 +77,39 @@ pub fn build_sweep_psbt(
         psbt,
         dust_input_count: dust_utxos.len(),
         total_dust_sats,
+    })
+}
+
+pub fn dry_run_sweep(
+    dust_utxos: &[ListUnspentResultEntry],
+    clean_utxos: &[ListUnspentResultEntry],
+) -> anyhow::Result<DryRunResult> {
+    if dust_utxos.is_empty() {
+        anyhow::bail!("No dust UTXOs to sweep");
+    }
+
+    let funder = clean_utxos
+        .iter()
+        .max_by_key(|u| u.amount.to_sat())
+        .ok_or_else(|| anyhow::anyhow!(
+            "Cannot sweep: no clean UTXOs available to fund transaction fees."
+        ))?;
+
+    let total_dust_sats: u64 = dust_utxos.iter().map(|u| u.amount.to_sat()).sum();
+    let funder_sats = funder.amount.to_sat();
+
+    // 68 vbytes per P2WPKH input, 31 vbytes output, 10 vbytes overhead
+    // fee rate: 2 sat/vbyte conservative estimate
+    let total_inputs = dust_utxos.len() as u64 + 1;
+    let estimated_vbytes = (total_inputs * 68) + 31 + 10;
+    let estimated_fee_sats = estimated_vbytes * 2;
+    let estimated_output_sats = funder_sats + total_dust_sats - estimated_fee_sats;
+
+    Ok(DryRunResult {
+        dust_input_count: dust_utxos.len(),
+        total_dust_sats,
+        funder_sats,
+        estimated_fee_sats,
+        estimated_output_sats,
     })
 }
