@@ -1,4 +1,4 @@
-/// Represents a UTXO in our domain — independent of bitcoincore-rpc types
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Utxo {
     pub txid: String,
@@ -7,6 +7,7 @@ pub struct Utxo {
     pub address: Option<String>,
 }
 
+#[allow(dead_code)]
 impl Utxo {
     pub fn new(txid: &str, vout: u32, amount_sats: u64, address: Option<&str>) -> Self {
         Self {

@@ -18,11 +18,11 @@ pub fn build_sweep_psbt(
 
     // Step 1: Pick the largest clean UTXO to fund the transaction
     let funder = clean_utxos
-        .iter()
-        .max_by_key(|u| u.amount.to_sat())
-        .ok_or_else(|| anyhow::anyhow!("No clean UTXOs available to fund fee"))?;
-
-    println!("\n   ℹ️  Using clean UTXO to fund fees: {} sats", funder.amount.to_sat());
+    .iter()
+    .max_by_key(|u| u.amount.to_sat())
+    .ok_or_else(|| anyhow::anyhow!(
+        "Cannot sweep: no clean UTXOs available to fund transaction fees.\nTip: fund your wallet first with a non-dust amount."
+    ))?;
 
     // Step 2: Build inputs — funder first, then all dust UTXOs
     let mut all_inputs: Vec<serde_json::Value> = vec![

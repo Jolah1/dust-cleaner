@@ -5,7 +5,7 @@ pub fn is_dust(amount_sats: u64, threshold: u64) -> bool {
     amount_sats < threshold
 }
 
-/// Classifies raw RPC UTXOs into dust and clean buckets
+
 pub fn classify_utxos(
     utxos: Vec<ListUnspentResultEntry>,
     threshold: u64,
@@ -24,7 +24,7 @@ pub fn classify_utxos(
     (dust, clean)
 }
 
-/// Classifies our own Utxo type — used for testing and future extensions
+#[allow(dead_code)]
 pub fn classify_owned_utxos(
     utxos: Vec<Utxo>,
     threshold: u64,
