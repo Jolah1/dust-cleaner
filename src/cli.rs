@@ -6,21 +6,18 @@ use clap::{Parser, Subcommand};
     about = "Detect and sweep dust attack UTXOs from your Bitcoin wallet"
 )]
 pub struct Cli {
-    /// Bitcoin Core RPC URL
     #[arg(long, default_value = "http://127.0.0.1:18443")]
     pub rpc_url: String,
 
-    /// Bitcoin Core RPC username
     #[arg(long)]
     pub rpc_user: String,
 
-    /// Bitcoin Core RPC password
     #[arg(long)]
     pub rpc_pass: String,
 
-    /// Dust threshold in satoshis (UTXOs below this are considered dust)
-    #[arg(long, default_value = "1000")]
-    pub threshold: u64,
+    /// Custom dust threshold in sats. If omitted, uses per-script-type thresholds
+    #[arg(long)]
+    pub threshold: Option<u64>,
 
     #[command(subcommand)]
     pub command: Commands,

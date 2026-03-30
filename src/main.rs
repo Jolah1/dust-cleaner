@@ -12,27 +12,37 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let client = rpc::connect(&cli.rpc_url, &cli.rpc_user, &cli.rpc_pass)?;
-    let threshold = cli.threshold;
+    let user_threshold = cli.threshold;
 
     match cli.command {
         Commands::Scan => {
             let utxos = scanner::fetch_utxos(&client)?;
             let total_utxos = utxos.len();
-            println!("Found {} total UTXOs (threshold: {} sats)\n", total_utxos, threshold);
 
-            let (dust_utxos, clean_utxos) = analyzer::classify_utxos(utxos, threshold);
+            let threshold_display = match user_threshold {
+                Some(t) => format!("{} sats (custom)", t),
+                None => "per-script-type (P2PKH:546, P2WPKH:294, P2TR:294, P2SH:540)".to_string(),
+            };
+            println!("Found {} total UTXOs (threshold: {})\n", total_utxos, threshold_display);
+
+            let (dust_utxos, clean_utxos) = analyzer::classify_utxos_smart(utxos, user_threshold);
 
             println!("⚠️  DUST UTXOs ({} found):", dust_utxos.len());
             if dust_utxos.is_empty() {
                 println!("   none");
             }
             for utxo in &dust_utxos {
+                let addr = utxo.address.as_ref()
+    .map(|a| a.clone().assume_checked().to_string())
+    .unwrap_or_else(|| "unknown".to_string());
+                let script_type = analyzer::detect_script_type(&addr);
                 println!(
-                    "   {} sats | {}:{} | address: {:?}",
+                    "   {} sats | {}:{} | {:?} | {}",
                     utxo.amount.to_sat(),
                     utxo.txid,
                     utxo.vout,
-                    utxo.address
+                    script_type,
+                    addr
                 );
             }
 
@@ -57,7 +67,7 @@ fn main() -> anyhow::Result<()> {
             println!("   Total UTXOs:    {}", total_utxos);
             println!("   Dust UTXOs:     {} ({} sats)", dust_utxos.len(), total_dust_sats);
             println!("   Clean UTXOs:    {} ({} sats)", clean_utxos.len(), total_clean_sats);
-            println!("   Dust threshold: {} sats", threshold);
+            println!("   Threshold:      {}", threshold_display);
 
             if !dust_utxos.is_empty() {
                 println!("\n   💡 Run 'sweep' to consolidate dust into a single UTXO");
@@ -69,13 +79,13 @@ fn main() -> anyhow::Result<()> {
 
         Commands::Sweep { dry_run } => {
             let utxos = scanner::fetch_utxos(&client)?;
-            let (dust_utxos, clean_utxos) = analyzer::classify_utxos(utxos, threshold);
-        
+            let (dust_utxos, clean_utxos) = analyzer::classify_utxos_smart(utxos, user_threshold);
+
             if dust_utxos.is_empty() {
                 println!("✅ No dust UTXOs found. Wallet is clean!");
                 return Ok(());
             }
-        
+
             println!("Found {} dust UTXOs to sweep:", dust_utxos.len());
             for utxo in &dust_utxos {
                 println!(
@@ -85,10 +95,9 @@ fn main() -> anyhow::Result<()> {
                     utxo.vout
                 );
             }
-        
+
             if dry_run {
                 let result = psbt_builder::dry_run_sweep(&dust_utxos, &clean_utxos)?;
-        
                 println!("\n🔍 Dry Run — no PSBT created\n");
                 println!("   Dust inputs:       {}", result.dust_input_count);
                 println!("   Total dust:        {} sats", result.total_dust_sats);
@@ -98,9 +107,8 @@ fn main() -> anyhow::Result<()> {
                 println!("\n   Run without --dry-run to create the PSBT.");
                 return Ok(());
             }
-        
+
             let result = psbt_builder::build_sweep_psbt(&client, &dust_utxos, &clean_utxos)?;
-        
             println!("\n📊 Sweep Summary:");
             println!("   Dust inputs:  {}", result.dust_input_count);
             println!("   Total dust:   {} sats", result.total_dust_sats);
