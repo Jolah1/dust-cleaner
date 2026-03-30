@@ -3,6 +3,7 @@ mod rpc;
 mod scanner;
 mod analyzer;
 mod psbt_builder;
+mod types;
 
 use clap::Parser;
 use cli::{Cli, Commands};
