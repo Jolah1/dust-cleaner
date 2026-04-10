@@ -1,5 +1,5 @@
-use bitcoincore_rpc::bitcoincore_rpc_json::ListUnspentResultEntry;
 use crate::types::Utxo;
+use bitcoincore_rpc::bitcoincore_rpc_json::ListUnspentResultEntry;
 
 /// Dust thresholds per script type based on fee cost to spend
 pub const DUST_P2PKH: u64 = 546;
@@ -35,9 +35,15 @@ pub fn detect_script_type(address: &str) -> ScriptType {
         ScriptType::P2PKH
     } else if address.starts_with("3") {
         ScriptType::P2SH
-    } else if address.starts_with("bc1q") || address.starts_with("tb1q") || address.starts_with("bcrt1q") {
+    } else if address.starts_with("bc1q")
+        || address.starts_with("tb1q")
+        || address.starts_with("bcrt1q")
+    {
         ScriptType::P2WPKH
-    } else if address.starts_with("bc1p") || address.starts_with("tb1p") || address.starts_with("bcrt1p") {
+    } else if address.starts_with("bc1p")
+        || address.starts_with("tb1p")
+        || address.starts_with("bcrt1p")
+    {
         ScriptType::P2TR
     } else {
         ScriptType::Unknown
@@ -53,12 +59,10 @@ pub fn is_dust(amount_sats: u64, threshold: u64) -> bool {
 pub fn is_dust_smart(amount_sats: u64, address: Option<&str>, user_threshold: Option<u64>) -> bool {
     let threshold = match user_threshold {
         Some(t) => t,
-        None => {
-            match address {
-                Some(addr) => detect_script_type(addr).dust_threshold(),
-                None => DUST_DEFAULT,
-            }
-        }
+        None => match address {
+            Some(addr) => detect_script_type(addr).dust_threshold(),
+            None => DUST_DEFAULT,
+        },
     };
     amount_sats < threshold
 }
@@ -93,9 +97,10 @@ pub fn classify_utxos_smart(
     let mut clean = vec![];
 
     for utxo in utxos {
-        let address = utxo.address
-    .as_ref()
-    .map(|a| a.clone().assume_checked().to_string());
+        let address = utxo
+            .address
+            .as_ref()
+            .map(|a| a.clone().assume_checked().to_string());
 
         let addr_str = address.as_deref();
 
@@ -110,10 +115,7 @@ pub fn classify_utxos_smart(
 }
 
 #[allow(dead_code)]
-pub fn classify_owned_utxos(
-    utxos: Vec<Utxo>,
-    threshold: u64,
-) -> (Vec<Utxo>, Vec<Utxo>) {
+pub fn classify_owned_utxos(utxos: Vec<Utxo>, threshold: u64) -> (Vec<Utxo>, Vec<Utxo>) {
     let mut dust = vec![];
     let mut clean = vec![];
 
@@ -161,23 +163,38 @@ mod tests {
 
     #[test]
     fn test_detect_script_type_p2pkh() {
-        assert_eq!(detect_script_type("1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf"), ScriptType::P2PKH);
+        assert_eq!(
+            detect_script_type("1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf"),
+            ScriptType::P2PKH
+        );
     }
 
     #[test]
     fn test_detect_script_type_p2sh() {
-        assert_eq!(detect_script_type("3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"), ScriptType::P2SH);
+        assert_eq!(
+            detect_script_type("3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"),
+            ScriptType::P2SH
+        );
     }
 
     #[test]
     fn test_detect_script_type_p2wpkh() {
-        assert_eq!(detect_script_type("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"), ScriptType::P2WPKH);
-        assert_eq!(detect_script_type("bcrt1q60z267jynd9swr3dk7k3tmjqmlmsr8xsn4c8mz"), ScriptType::P2WPKH);
+        assert_eq!(
+            detect_script_type("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"),
+            ScriptType::P2WPKH
+        );
+        assert_eq!(
+            detect_script_type("bcrt1q60z267jynd9swr3dk7k3tmjqmlmsr8xsn4c8mz"),
+            ScriptType::P2WPKH
+        );
     }
 
     #[test]
     fn test_detect_script_type_p2tr() {
-        assert_eq!(detect_script_type("bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0"), ScriptType::P2TR);
+        assert_eq!(
+            detect_script_type("bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0"),
+            ScriptType::P2TR
+        );
     }
 
     #[test]
@@ -191,16 +208,32 @@ mod tests {
     #[test]
     fn test_is_dust_smart_p2wpkh() {
         // 294 is NOT dust for P2WPKH (equal to threshold)
-        assert!(!is_dust_smart(294, Some("bcrt1q60z267jynd9swr3dk7k3tmjqmlmsr8xsn4c8mz"), None));
+        assert!(!is_dust_smart(
+            294,
+            Some("bcrt1q60z267jynd9swr3dk7k3tmjqmlmsr8xsn4c8mz"),
+            None
+        ));
         // 293 IS dust for P2WPKH
-        assert!(is_dust_smart(293, Some("bcrt1q60z267jynd9swr3dk7k3tmjqmlmsr8xsn4c8mz"), None));
+        assert!(is_dust_smart(
+            293,
+            Some("bcrt1q60z267jynd9swr3dk7k3tmjqmlmsr8xsn4c8mz"),
+            None
+        ));
     }
 
     #[test]
     fn test_is_dust_smart_user_override() {
         // user sets threshold to 1000, overrides per-type
-        assert!(is_dust_smart(500, Some("bcrt1q60z267jynd9swr3dk7k3tmjqmlmsr8xsn4c8mz"), Some(1000)));
-        assert!(!is_dust_smart(1000, Some("bcrt1q60z267jynd9swr3dk7k3tmjqmlmsr8xsn4c8mz"), Some(1000)));
+        assert!(is_dust_smart(
+            500,
+            Some("bcrt1q60z267jynd9swr3dk7k3tmjqmlmsr8xsn4c8mz"),
+            Some(1000)
+        ));
+        assert!(!is_dust_smart(
+            1000,
+            Some("bcrt1q60z267jynd9swr3dk7k3tmjqmlmsr8xsn4c8mz"),
+            Some(1000)
+        ));
     }
 
     #[test]
@@ -221,10 +254,7 @@ mod tests {
 
     #[test]
     fn test_classify_owned_utxos_all_dust() {
-        let utxos = vec![
-            make_utxo("txid1", 0, 100),
-            make_utxo("txid2", 0, 200),
-        ];
+        let utxos = vec![make_utxo("txid1", 0, 100), make_utxo("txid2", 0, 200)];
         let (dust, clean) = classify_owned_utxos(utxos, 1000);
         assert_eq!(dust.len(), 2);
         assert_eq!(clean.len(), 0);

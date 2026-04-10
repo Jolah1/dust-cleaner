@@ -1,5 +1,5 @@
-use bitcoincore_rpc::{Client, RpcApi};
 use bitcoincore_rpc::bitcoincore_rpc_json::ListUnspentResultEntry;
+use bitcoincore_rpc::{Client, RpcApi};
 
 pub fn fetch_utxos(client: &Client) -> anyhow::Result<Vec<ListUnspentResultEntry>> {
     let utxos = client.list_unspent(None, None, None, None, None)

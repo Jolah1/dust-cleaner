@@ -31,12 +31,10 @@ pub fn build_sweep_psbt(
             "Cannot sweep: no clean UTXOs available to fund transaction fees.\nTip: fund your wallet first with a non-dust amount."
         ))?;
 
-    let mut all_inputs: Vec<serde_json::Value> = vec![
-        serde_json::json!({
-            "txid": funder.txid.to_string(),
-            "vout": funder.vout,
-        })
-    ];
+    let mut all_inputs: Vec<serde_json::Value> = vec![serde_json::json!({
+        "txid": funder.txid.to_string(),
+        "vout": funder.vout,
+    })];
 
     for utxo in dust_utxos {
         all_inputs.push(serde_json::json!({
@@ -91,9 +89,9 @@ pub fn dry_run_sweep(
     let funder = clean_utxos
         .iter()
         .max_by_key(|u| u.amount.to_sat())
-        .ok_or_else(|| anyhow::anyhow!(
-            "Cannot sweep: no clean UTXOs available to fund transaction fees."
-        ))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("Cannot sweep: no clean UTXOs available to fund transaction fees.")
+        })?;
 
     let total_dust_sats: u64 = dust_utxos.iter().map(|u| u.amount.to_sat()).sum();
     let funder_sats = funder.amount.to_sat();
@@ -126,9 +124,9 @@ pub fn build_op_return_psbt(
     let funder = clean_utxos
         .iter()
         .max_by_key(|u| u.amount.to_sat())
-        .ok_or_else(|| anyhow::anyhow!(
-            "Cannot sweep: no clean UTXOs available to fund transaction fees."
-        ))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("Cannot sweep: no clean UTXOs available to fund transaction fees.")
+        })?;
 
     println!(
         "\n   ℹ️  Using clean UTXO to fund fees: {} sats",
@@ -136,12 +134,10 @@ pub fn build_op_return_psbt(
     );
 
     // Build inputs — funder first, then all dust UTXOs
-    let mut all_inputs: Vec<serde_json::Value> = vec![
-        serde_json::json!({
-            "txid": funder.txid.to_string(),
-            "vout": funder.vout,
-        })
-    ];
+    let mut all_inputs: Vec<serde_json::Value> = vec![serde_json::json!({
+        "txid": funder.txid.to_string(),
+        "vout": funder.vout,
+    })];
 
     for utxo in dust_utxos {
         all_inputs.push(serde_json::json!({

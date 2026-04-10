@@ -13,7 +13,6 @@ pub struct Cli {
     #[arg(long)]
     pub rpc_user: String,
 
-
     #[arg(long)]
     pub rpc_pass: String,
 
