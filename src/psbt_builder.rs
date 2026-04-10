@@ -113,3 +113,86 @@ pub fn dry_run_sweep(
         estimated_output_sats,
     })
 }
+
+pub fn build_op_return_psbt(
+    client: &Client,
+    dust_utxos: &[ListUnspentResultEntry],
+    clean_utxos: &[ListUnspentResultEntry],
+) -> anyhow::Result<SweepResult> {
+    if dust_utxos.is_empty() {
+        anyhow::bail!("No dust UTXOs to sweep");
+    }
+
+    let funder = clean_utxos
+        .iter()
+        .max_by_key(|u| u.amount.to_sat())
+        .ok_or_else(|| anyhow::anyhow!(
+            "Cannot sweep: no clean UTXOs available to fund transaction fees."
+        ))?;
+
+    println!(
+        "\n   ℹ️  Using clean UTXO to fund fees: {} sats",
+        funder.amount.to_sat()
+    );
+
+    // Build inputs — funder first, then all dust UTXOs
+    let mut all_inputs: Vec<serde_json::Value> = vec![
+        serde_json::json!({
+            "txid": funder.txid.to_string(),
+            "vout": funder.vout,
+        })
+    ];
+
+    for utxo in dust_utxos {
+        all_inputs.push(serde_json::json!({
+            "txid": utxo.txid.to_string(),
+            "vout": utxo.vout,
+        }));
+    }
+
+    // OP_RETURN output — "ashes to ashes, dust to dust"
+    // data: 617368 = "ash" in hex
+    let op_return_data = "617368";
+
+    // Change output to receive funder amount back minus fees
+    let change_address = client.get_new_address(None, None)?;
+    let change_address = change_address.assume_checked();
+
+    let funder_btc = funder.amount.to_btc();
+    let outputs = serde_json::json!([
+        {
+            "data": op_return_data
+        },
+        {
+            change_address.to_string(): format!("{:.8}", funder_btc)
+        }
+    ]);
+
+    // subtractFeeFromOutputs: [1] means subtract fee from the change output (index 1)
+    // OP_RETURN is index 0 and carries no value
+    let response = client.call::<serde_json::Value>(
+        "walletcreatefundedpsbt",
+        &[
+            serde_json::to_value(&all_inputs)?,
+            outputs,
+            serde_json::Value::Null,
+            serde_json::json!({
+                "subtractFeeFromOutputs": [1],
+                "replaceable": true,
+            }),
+        ],
+    )?;
+
+    let psbt = response["psbt"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("No PSBT returned from node"))?
+        .to_string();
+
+    let total_dust_sats = dust_utxos.iter().map(|u| u.amount.to_sat()).sum();
+
+    Ok(SweepResult {
+        psbt,
+        dust_input_count: dust_utxos.len(),
+        total_dust_sats,
+    })
+}

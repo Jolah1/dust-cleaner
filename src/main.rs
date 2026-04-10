@@ -77,15 +77,15 @@ fn main() -> anyhow::Result<()> {
             println!("─────────────────────────────────────────");
         }
 
-        Commands::Sweep { dry_run } => {
+        Commands::Sweep { dry_run, method } => {
             let utxos = scanner::fetch_utxos(&client)?;
             let (dust_utxos, clean_utxos) = analyzer::classify_utxos_smart(utxos, user_threshold);
-
+        
             if dust_utxos.is_empty() {
                 println!("✅ No dust UTXOs found. Wallet is clean!");
                 return Ok(());
             }
-
+        
             println!("Found {} dust UTXOs to sweep:", dust_utxos.len());
             for utxo in &dust_utxos {
                 println!(
@@ -95,10 +95,11 @@ fn main() -> anyhow::Result<()> {
                     utxo.vout
                 );
             }
-
+        
             if dry_run {
                 let result = psbt_builder::dry_run_sweep(&dust_utxos, &clean_utxos)?;
                 println!("\n🔍 Dry Run — no PSBT created\n");
+                println!("   Method:            {:?}", method);
                 println!("   Dust inputs:       {}", result.dust_input_count);
                 println!("   Total dust:        {} sats", result.total_dust_sats);
                 println!("   Funder UTXO:       {} sats", result.funder_sats);
@@ -107,8 +108,19 @@ fn main() -> anyhow::Result<()> {
                 println!("\n   Run without --dry-run to create the PSBT.");
                 return Ok(());
             }
-
-            let result = psbt_builder::build_sweep_psbt(&client, &dust_utxos, &clean_utxos)?;
+        
+            let result = match method {
+                cli::SweepMethod::Consolidate => {
+                    println!("\n📎 Method: consolidate — dust swept to fresh address");
+                    psbt_builder::build_sweep_psbt(&client, &dust_utxos, &clean_utxos)?
+                }
+                cli::SweepMethod::OpReturn => {
+                    println!("\n🔥 Method: op-return — dust burned to miner fees");
+                    println!("   Output: OP_RETURN (\"ash\" — ashes to ashes, dust to dust)");
+                    psbt_builder::build_op_return_psbt(&client, &dust_utxos, &clean_utxos)?
+                }
+            };
+        
             println!("\n📊 Sweep Summary:");
             println!("   Dust inputs:  {}", result.dust_input_count);
             println!("   Total dust:   {} sats", result.total_dust_sats);
