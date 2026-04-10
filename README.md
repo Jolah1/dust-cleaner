@@ -9,8 +9,7 @@ Built in Rust!
 
 Example of scanning for dust UTXOs and performing a dry-run sweep:
 
-
-[![asciicast](https://asciinema.org/a/1dC18FaxI2Rjif8F.svg)](https://asciinema.org/a/1dC18FaxI2Rjif8F)
+[![asciicast](https://asciinema.org/a/911545.svg)](https://asciinema.org/a/911545)
 
 ## What is a Dust Attack?
 
