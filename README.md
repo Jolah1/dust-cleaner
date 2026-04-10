@@ -5,6 +5,13 @@ A Bitcoin CLI tool that detects dust attack UTXOs in your wallet and sweeps them
 Built in Rust!
 ---
 
+## Demo
+
+Example of scanning for dust UTXOs and performing a dry-run sweep:
+
+
+[![asciicast](https://asciinema.org/a/1dC18FaxI2Rjif8F.svg)](https://asciinema.org/a/1dC18FaxI2Rjif8F)
+
 ## What is a Dust Attack?
 
 A dust attack is a privacy attack where an adversary sends tiny amounts of Bitcoin (called "dust") to your wallet addresses. When you later spend those UTXOs alongside your real funds, the attacker can track the transaction graph to cluster your addresses and de-anonymize your wallet.
