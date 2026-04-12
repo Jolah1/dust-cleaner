@@ -8,7 +8,7 @@ pub fn fetch_utxos(client: &Client) -> anyhow::Result<Vec<ListUnspentResultEntry
             if msg.contains("Connection refused") {
                 anyhow::anyhow!("Could not connect to Bitcoin Core. Is your node running?\nTip: bitcoind -conf=/home/$USER/.bitcoin/regtest-dev/bitcoin.conf -datadir=/home/$USER/.bitcoin/regtest-dev")
             } else if msg.contains("No wallet") {
-                anyhow::anyhow!("No wallet loaded.\nTip: bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass loadwallet \"testwallet\"")
+                anyhow::anyhow!("No wallet loaded.\nTip: bitcoin-cli -rpcport=<port> -rpcuser=<user> -rpcpassword=<pass> loadwallet <walletname>")
             } else {
                 anyhow::anyhow!("Failed to fetch UTXOs: {}", msg)
             }
