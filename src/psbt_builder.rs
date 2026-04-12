@@ -32,12 +32,10 @@ fn build_inputs(
     funder: &ListUnspentResultEntry,
     dust_utxos: &[ListUnspentResultEntry],
 ) -> Vec<serde_json::Value> {
-    let mut inputs = vec![
-        serde_json::json!({
-            "txid": funder.txid.to_string(),
-            "vout": funder.vout,
-        })
-    ];
+    let mut inputs = vec![serde_json::json!({
+        "txid": funder.txid.to_string(),
+        "vout": funder.vout,
+    })];
     for utxo in dust_utxos {
         inputs.push(serde_json::json!({
             "txid": utxo.txid.to_string(),
@@ -132,7 +130,10 @@ pub fn build_op_return_psbt(
     }
 
     let funder = select_funder(clean_utxos)?;
-    println!("\n   ℹ️  Using clean UTXO to fund fees: {} sats", funder.amount.to_sat());
+    println!(
+        "\n   ℹ️  Using clean UTXO to fund fees: {} sats",
+        funder.amount.to_sat()
+    );
 
     let all_inputs = build_inputs(funder, dust_utxos);
 

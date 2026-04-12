@@ -6,6 +6,6 @@ edition = "2021"
 [dependencies]
 bitcoincore-rpc = "0.19"
 bitcoin = "0.32"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1"
 serde_json = "1.0.149"
