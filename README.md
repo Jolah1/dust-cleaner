@@ -33,7 +33,7 @@ Options:
 
 Example of scanning for dust UTXOs and performing a sweep:
 
-[![asciicast](https://asciinema.org/a/911545.svg)](https://asciinema.org/a/911545)
+[![asciicast](https://asciinema.org/a/cbuBIDQR7o8jMv9n.svg)](https://asciinema.org/a/cbuBIDQR7o8jMv9n)
 
 ---
 
