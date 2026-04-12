@@ -7,17 +7,19 @@ use clap::{Parser, Subcommand, ValueEnum};
 )]
 pub struct Cli {
     /// Bitcoin Core RPC URL
-    #[arg(long, default_value = "http://127.0.0.1:18443")]
+    #[arg(long, default_value = "http://127.0.0.1:18443", env = "DUST_RPC_URL")]
     pub rpc_url: String,
 
-    #[arg(long)]
+    /// Bitcoin Core RPC username
+    #[arg(long, env = "DUST_RPC_USER")]
     pub rpc_user: String,
 
-    #[arg(long)]
+    /// Bitcoin Core RPC password
+    #[arg(long, env = "DUST_RPC_PASS")]
     pub rpc_pass: String,
 
-    /// Custom dust threshold in sats. If omitted, uses per-script-type thresholds
-    #[arg(long)]
+    /// Dust threshold in sats. If omitted, uses per-script-type thresholds
+    #[arg(long, env = "DUST_THRESHOLD")]
     pub threshold: Option<u64>,
 
     #[command(subcommand)]
@@ -42,7 +44,7 @@ pub enum Commands {
         #[arg(long, default_value = "false")]
         dry_run: bool,
 
-        /// Sweep method: op-return (burn to fees)
+        /// Sweep method: consolidate (default) or op-return (burn to fees)
         #[arg(long, value_enum, default_value = "consolidate")]
         method: SweepMethod,
     },
