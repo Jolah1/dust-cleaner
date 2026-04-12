@@ -1,13 +1,13 @@
+mod analyzer;
 mod cli;
+mod psbt_builder;
 mod rpc;
 mod scanner;
-mod analyzer;
-mod psbt_builder;
 mod types;
 
+use bitcoincore_rpc::Client;
 use clap::Parser;
 use cli::{Cli, Commands, SweepMethod};
-use bitcoincore_rpc::Client;
 
 fn handle_scan(client: &Client, user_threshold: Option<u64>) -> anyhow::Result<()> {
     let utxos = scanner::fetch_utxos(client)?;
@@ -17,7 +17,10 @@ fn handle_scan(client: &Client, user_threshold: Option<u64>) -> anyhow::Result<(
         Some(t) => format!("{} sats (custom)", t),
         None => "per-script-type (P2PKH:546, P2WPKH:294, P2TR:294, P2SH:540)".to_string(),
     };
-    println!("Found {} total UTXOs (threshold: {})\n", total_utxos, threshold_display);
+    println!(
+        "Found {} total UTXOs (threshold: {})\n",
+        total_utxos, threshold_display
+    );
 
     let (dust_utxos, clean_utxos) = analyzer::classify_utxos_smart(utxos, user_threshold);
 
@@ -26,7 +29,9 @@ fn handle_scan(client: &Client, user_threshold: Option<u64>) -> anyhow::Result<(
         println!("   none");
     }
     for utxo in &dust_utxos {
-        let addr = utxo.address.as_ref()
+        let addr = utxo
+            .address
+            .as_ref()
             .map(|a| a.clone().assume_checked().to_string())
             .unwrap_or_else(|| "unknown".to_string());
         let script_type = analyzer::detect_script_type(&addr);
@@ -59,8 +64,16 @@ fn handle_scan(client: &Client, user_threshold: Option<u64>) -> anyhow::Result<(
     println!("\n─────────────────────────────────────────");
     println!("📊 Summary");
     println!("   Total UTXOs:    {}", total_utxos);
-    println!("   Dust UTXOs:     {} ({} sats)", dust_utxos.len(), total_dust_sats);
-    println!("   Clean UTXOs:    {} ({} sats)", clean_utxos.len(), total_clean_sats);
+    println!(
+        "   Dust UTXOs:     {} ({} sats)",
+        dust_utxos.len(),
+        total_dust_sats
+    );
+    println!(
+        "   Clean UTXOs:    {} ({} sats)",
+        clean_utxos.len(),
+        total_clean_sats
+    );
     println!("   Threshold:      {}", threshold_display);
 
     if !dust_utxos.is_empty() {
@@ -105,7 +118,10 @@ fn handle_sweep(
         println!("   Total dust:        {} sats", result.total_dust_sats);
         println!("   Funder UTXO:       {} sats", result.funder_sats);
         println!("   Estimated fee:     {} sats", result.estimated_fee_sats);
-        println!("   Estimated output:  {} sats", result.estimated_output_sats);
+        println!(
+            "   Estimated output:  {} sats",
+            result.estimated_output_sats
+        );
         println!("\n   Run without --dry-run to create the PSBT.");
         return Ok(());
     }
