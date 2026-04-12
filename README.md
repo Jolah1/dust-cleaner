@@ -2,8 +2,6 @@
 
 A Bitcoin CLI tool that detects dust attack UTXOs in your wallet and sweeps them safely using PSBTs ([BIP174](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki)).
 
-Built in Rust!
----
 
 ## Demo
 
@@ -150,6 +148,17 @@ cHNidP8BA...
    Inspect: bitcoin-cli decodepsbt <psbt>
    Sign:    bitcoin-cli walletprocesspsbt <psbt>
    Send:    bitcoin-cli sendrawtransaction <hex>
+```
+
+### Sweep using OP_RETURN (burn to miner fees)
+```bash
+dust-cleaner --rpc-user <user> --rpc-pass <pass> sweep --method op-return
+```
+
+Example output:
+```
+🔥 Method: op-return — dust burned to miner fees
+   Output: OP_RETURN ("ash" — ashes to ashes, dust to dust)
 ```
 
 ### Custom threshold
