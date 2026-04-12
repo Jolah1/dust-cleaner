@@ -2,12 +2,40 @@
 
 A Bitcoin CLI tool that detects dust attack UTXOs in your wallet and sweeps them safely using PSBTs ([BIP174](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki)).
 
+Connects directly to Bitcoin Core via RPC. No keys touched. No auto-broadcast. You stay in control.
+
+---
+
+## CLI Interface
+
+```
+Detect and sweep dust attack UTXOs from your Bitcoin wallet
+
+Usage: dust-cleaner [OPTIONS] --rpc-user <RPC_USER> --rpc-pass <RPC_PASS> <COMMAND>
+
+Commands:
+  scan   Scan wallet for dust UTXOs
+  sweep  Create a PSBT sweeping all dust UTXOs
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+      --rpc-url <RPC_URL>      Bitcoin Core RPC URL [env: DUST_RPC_URL=] [default: http://127.0.0.1:18443]
+      --rpc-user <RPC_USER>    Bitcoin Core RPC username [env: DUST_RPC_USER=]
+      --rpc-pass <RPC_PASS>    Bitcoin Core RPC password [env: DUST_RPC_PASS=]
+      --threshold <THRESHOLD>  Dust threshold in sats [env: DUST_THRESHOLD=]
+  -h, --help                   Print help
+  -V, --version                Print version
+```
+
+---
 
 ## Demo
 
-Example of scanning for dust UTXOs and performing a dry-run sweep:
+Example of scanning for dust UTXOs and performing a sweep:
 
 [![asciicast](https://asciinema.org/a/911545.svg)](https://asciinema.org/a/911545)
+
+---
 
 ## What is a Dust Attack?
 
@@ -29,7 +57,7 @@ Dust amounts vary by script type — too small to spend economically on their ow
 3. Classifies UTXOs using **per-script-type thresholds** (or a custom threshold you provide)
 4. Shows a dry-run preview of the sweep before committing
 5. Builds a PSBT that sweeps all dust UTXOs in a single transaction
-6. Consolidates dust into a fresh address, removing the attacker's tracking tags
+6. Burn sweeps via OP_RETURN
 
 ---
 
@@ -44,7 +72,7 @@ By default, dust-cleaner uses Bitcoin-accurate per-script-type thresholds based 
 | P2TR        | 58 vbytes   | 294 sats       |
 | P2SH        | 91 vbytes   | 540 sats       |
 
-You can override these with the `--threshold` flag.
+You can override these with `--threshold` or `DUST_THRESHOLD`.
 
 ---
 
@@ -69,10 +97,24 @@ The binary will be at `target/release/dust-cleaner`.
 
 ## Usage
 
+### Set credentials once per session (recommended)
+
+```bash
+export DUST_RPC_URL=http://127.0.0.1:18443
+export DUST_RPC_USER=user
+export DUST_RPC_PASS=pass
+
+dust-cleaner scan
+dust-cleaner sweep --dry-run
+dust-cleaner sweep --method op-return
+```
+
+---
+
 ### Scan for dust UTXOs
 
 ```bash
-dust-cleaner --rpc-user <user> --rpc-pass <pass> scan
+dust-cleaner scan
 ```
 
 Example output:
@@ -100,10 +142,12 @@ Found 6 total UTXOs (threshold: per-script-type (P2PKH:546, P2WPKH:294, P2TR:294
 ─────────────────────────────────────────
 ```
 
+---
+
 ### Dry run — preview sweep without creating a PSBT
 
 ```bash
-dust-cleaner --rpc-user <user> --rpc-pass <pass> sweep --dry-run
+dust-cleaner sweep --dry-run
 ```
 
 Example output:
@@ -115,6 +159,7 @@ Found 3 dust UTXOs to sweep:
 
 🔍 Dry Run — no PSBT created
 
+   Method:            Consolidate
    Dust inputs:       3
    Total dust:        1600 sats
    Funder UTXO:       5000000000 sats
@@ -124,18 +169,17 @@ Found 3 dust UTXOs to sweep:
    Run without --dry-run to create the PSBT.
 ```
 
-### Sweep dust UTXOs
+---
+
+### Sweep — consolidate dust to a fresh address
 
 ```bash
-dust-cleaner --rpc-user <user> --rpc-pass <pass> sweep
+dust-cleaner sweep
 ```
 
 Example output:
 ```
-Found 3 dust UTXOs to sweep:
-   500 sats | 3a8c360f...:0
-   300 sats | 87ef9f5b...:1
-   800 sats | 38942b1e...:1
+📎 Method: consolidate — dust swept to fresh address
 
 📊 Sweep Summary:
    Dust inputs:  3
@@ -150,37 +194,61 @@ cHNidP8BA...
    Send:    bitcoin-cli sendrawtransaction <hex>
 ```
 
-### Sweep using OP_RETURN (burn to miner fees)
+---
+
+### Sweep — OP_RETURN (burn dust to miner fees)
+
+The most private option — dust is burned entirely to miner fees via an
+OP_RETURN output containing `"ash"` (ashes to ashes, dust to dust 🪦).
+No consolidation output, no address linkage.
+
 ```bash
-dust-cleaner --rpc-user <user> --rpc-pass <pass> sweep --method op-return
+dust-cleaner sweep --method op-return
 ```
 
 Example output:
 ```
 🔥 Method: op-return — dust burned to miner fees
    Output: OP_RETURN ("ash" — ashes to ashes, dust to dust)
+
+📊 Sweep Summary:
+   Dust inputs:  3
+   Total dust:   1600 sats
+
+🧹 Sweep PSBT (base64):
+cHNidP8BA...
 ```
+
+---
 
 ### Custom threshold
 
 ```bash
-# Override with a custom threshold (catches more UTXOs)
-dust-cleaner --rpc-user <user> --rpc-pass <pass> --threshold 1000 scan
+# Override with a custom threshold in sats
+dust-cleaner --threshold 1000 scan
+
+# Using env var instead
+export DUST_THRESHOLD=1000
+dust-cleaner scan
 
 # Custom RPC URL (mainnet default port)
-dust-cleaner --rpc-url http://127.0.0.1:8332 --rpc-user <user> --rpc-pass <pass> scan
+dust-cleaner --rpc-url http://127.0.0.1:8332 scan
 ```
 
 ---
 
 ## Configuration
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--rpc-url` | `http://127.0.0.1:18443` | Bitcoin Core RPC URL |
-| `--rpc-user` | required | RPC username |
-| `--rpc-pass` | required | RPC password |
-| `--threshold` | per-script-type | Custom dust threshold in satoshis |
+### CLI Flags and Environment Variables
+
+| Flag | Environment Variable | Default | Description |
+|------|---------------------|---------|-------------|
+| `--rpc-url` | `DUST_RPC_URL` | `http://127.0.0.1:18443` | Bitcoin Core RPC URL |
+| `--rpc-user` | `DUST_RPC_USER` | required | RPC username |
+| `--rpc-pass` | `DUST_RPC_PASS` | required | RPC password |
+| `--threshold` | `DUST_THRESHOLD` | per-script-type | Custom dust threshold in sats |
+
+CLI flags always override environment variables when explicitly provided.
 
 ---
 
@@ -225,17 +293,20 @@ bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass createwallet "testwal
 ADDRESS=$(bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass getnewaddress)
 bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass generatetoaddress 101 $ADDRESS
 
-# Simulate dust attack — send tiny amounts to your own addresses
+# Simulate dust attack
 DUST1=$(bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass getnewaddress)
 DUST2=$(bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass getnewaddress)
 bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass sendtoaddress $DUST1 0.000005
 bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass sendtoaddress $DUST2 0.000003
 bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass generatetoaddress 1 $ADDRESS
 
-# Scan and sweep
-cargo run -- --rpc-user user --rpc-pass pass scan
-cargo run -- --rpc-user user --rpc-pass pass sweep --dry-run
-cargo run -- --rpc-user user --rpc-pass pass sweep
+# Set env vars and run
+export DUST_RPC_USER=user
+export DUST_RPC_PASS=pass
+dust-cleaner scan
+dust-cleaner sweep --dry-run
+dust-cleaner sweep
+dust-cleaner sweep --method op-return
 ```
 
 ---
@@ -261,6 +332,16 @@ dust-cleaner/
 
 ---
 
+## Resources
+
+- [BIP174 — Partially Signed Bitcoin Transactions](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki)
+- [BIP370 — PSBTv2](https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki)
+- [Bitcoin Core RPC documentation](https://developer.bitcoin.org/reference/rpc/)
+- [rust-bitcoin crate](https://docs.rs/bitcoin/latest/bitcoin/)
+- [bitcoincore-rpc crate](https://docs.rs/bitcoincore-rpc/latest/bitcoincore_rpc/)
+- [Disposing of dust attack UTXOs — Delving Bitcoin](https://delvingbitcoin.org/t/disposing-of-dust-attack-utxos/2215/)
+
+---
 
 ## License
 
