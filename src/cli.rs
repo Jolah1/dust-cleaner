@@ -10,11 +10,9 @@ pub struct Cli {
     #[arg(long, default_value = "http://127.0.0.1:18443", env = "DUST_RPC_URL")]
     pub rpc_url: String,
 
-    /// Bitcoin Core RPC username
     #[arg(long, env = "DUST_RPC_USER")]
     pub rpc_user: String,
 
-    /// Bitcoin Core RPC password
     #[arg(long, env = "DUST_RPC_PASS")]
     pub rpc_pass: String,
 
@@ -38,14 +36,17 @@ pub enum SweepMethod {
 pub enum Commands {
     /// Scan wallet for dust UTXOs
     Scan,
-    /// Create a PSBT sweeping all dust UTXOs
+
     Sweep {
         /// Preview the sweep without creating a PSBT
         #[arg(long, default_value = "false")]
         dry_run: bool,
 
-        /// Sweep method: consolidate (default) or op-return (burn to fees)
-        #[arg(long, value_enum, default_value = "consolidate")]
+        /// Sweep method: op-return (burn to fees)
+        #[arg(long, value_enum, default_value = "op-return")]
         method: SweepMethod,
+
+        #[arg(long, default_value = "false")]
+        batch: bool,
     },
 }
