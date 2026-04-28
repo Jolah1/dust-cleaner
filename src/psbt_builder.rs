@@ -227,7 +227,8 @@ pub fn build_per_utxo_psbts(
             .ok_or_else(|| anyhow::anyhow!("No PSBT returned from node"))?
             .to_string();
 
-        let address = utxo.address
+        let address = utxo
+            .address
             .as_ref()
             .map(|a| a.clone().assume_checked().to_string())
             .unwrap_or_else(|| "unknown".to_string());

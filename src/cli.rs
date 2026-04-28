@@ -10,11 +10,9 @@ pub struct Cli {
     #[arg(long, default_value = "http://127.0.0.1:18443", env = "DUST_RPC_URL")]
     pub rpc_url: String,
 
-
     #[arg(long, env = "DUST_RPC_USER")]
     pub rpc_user: String,
 
-    
     #[arg(long, env = "DUST_RPC_PASS")]
     pub rpc_pass: String,
 
@@ -38,7 +36,7 @@ pub enum SweepMethod {
 pub enum Commands {
     /// Scan wallet for dust UTXOs
     Scan,
-    
+
     Sweep {
         /// Preview the sweep without creating a PSBT
         #[arg(long, default_value = "false")]
@@ -48,7 +46,6 @@ pub enum Commands {
         #[arg(long, value_enum, default_value = "op-return")]
         method: SweepMethod,
 
-        
         #[arg(long, default_value = "false")]
         batch: bool,
     },

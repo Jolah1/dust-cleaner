@@ -86,7 +86,6 @@ fn handle_scan(client: &Client, user_threshold: Option<u64>) -> anyhow::Result<(
     Ok(())
 }
 
-
 fn handle_sweep(
     client: &Client,
     user_threshold: Option<u64>,
@@ -124,12 +123,18 @@ fn handle_sweep(
         let result = psbt_builder::dry_run_sweep(&dust_utxos, &clean_utxos)?;
         println!("🔍 Dry Run — no PSBT created\n");
         println!("   Method:            {:?}", method);
-        println!("   Mode:              {}", if batch { "batch" } else { "per-UTXO" });
+        println!(
+            "   Mode:              {}",
+            if batch { "batch" } else { "per-UTXO" }
+        );
         println!("   Dust inputs:       {}", result.dust_input_count);
         println!("   Total dust:        {} sats", result.total_dust_sats);
         println!("   Funder UTXO:       {} sats", result.funder_sats);
         println!("   Estimated fee:     {} sats", result.estimated_fee_sats);
-        println!("   Estimated output:  {} sats", result.estimated_output_sats);
+        println!(
+            "   Estimated output:  {} sats",
+            result.estimated_output_sats
+        );
         println!("\n   Run without --dry-run to create the PSBT.");
         return Ok(());
     }
@@ -160,7 +165,10 @@ fn handle_sweep(
         // per-UTXO behavior — one PSBT per dust UTXO
         let results = psbt_builder::build_per_utxo_psbts(client, &dust_utxos, &clean_utxos)?;
 
-        println!("📊 Generated {} PSBTs (one per dust UTXO):\n", results.len());
+        println!(
+            "📊 Generated {} PSBTs (one per dust UTXO):\n",
+            results.len()
+        );
 
         for (i, (address, result)) in results.iter().enumerate() {
             println!("─── PSBT {} of {} ───", i + 1, results.len());
@@ -187,9 +195,11 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Scan => handle_scan(&client, user_threshold)?,
-        Commands::Sweep { dry_run, method, batch } => {
-            handle_sweep(&client, user_threshold, dry_run, method, batch)?
-        }
+        Commands::Sweep {
+            dry_run,
+            method,
+            batch,
+        } => handle_sweep(&client, user_threshold, dry_run, method, batch)?,
     }
 
     Ok(())
