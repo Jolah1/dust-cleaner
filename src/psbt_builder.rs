@@ -175,3 +175,72 @@ pub fn build_op_return_psbt(
         total_dust_sats,
     })
 }
+pub fn build_per_utxo_psbts(
+    client: &Client,
+    dust_utxos: &[ListUnspentResultEntry],
+    clean_utxos: &[ListUnspentResultEntry],
+) -> anyhow::Result<Vec<(String, SweepResult)>> {
+    if dust_utxos.is_empty() {
+        anyhow::bail!("No dust UTXOs to sweep");
+    }
+
+    let funder = select_funder(clean_utxos)?;
+    let mut results = vec![];
+
+    for utxo in dust_utxos {
+        let inputs = vec![
+            serde_json::json!({
+                "txid": funder.txid.to_string(),
+                "vout": funder.vout,
+            }),
+            serde_json::json!({
+                "txid": utxo.txid.to_string(),
+                "vout": utxo.vout,
+            }),
+        ];
+
+        let op_return_data = "617368";
+        let change_address = client.get_new_address(None, None)?;
+        let change_address = change_address.assume_checked();
+
+        let funder_btc = funder.amount.to_btc();
+        let outputs = serde_json::json!([
+            { "data": op_return_data },
+            { change_address.to_string(): format!("{:.8}", funder_btc) }
+        ]);
+
+        let response = client.call::<serde_json::Value>(
+            "walletcreatefundedpsbt",
+            &[
+                serde_json::to_value(&inputs)?,
+                outputs,
+                serde_json::Value::Null,
+                serde_json::json!({
+                    "subtractFeeFromOutputs": [1],
+                    "replaceable": true,
+                }),
+            ],
+        )?;
+
+        let psbt = response["psbt"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("No PSBT returned from node"))?
+            .to_string();
+
+        let address = utxo.address
+            .as_ref()
+            .map(|a| a.clone().assume_checked().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        results.push((
+            address,
+            SweepResult {
+                psbt,
+                dust_input_count: 1,
+                total_dust_sats: utxo.amount.to_sat(),
+            },
+        ));
+    }
+
+    Ok(results)
+}
