@@ -109,6 +109,17 @@ dust-cleaner sweep --dry-run
 dust-cleaner sweep
 ```
 
+### Architecture Flow
+
+Bitcoin Core RPC
+      ↓
+scanner.rs → fetch UTXOs
+      ↓
+analyzer.rs → classify dust
+      ↓
+psbt_builder.rs → construct PSBTs
+      ↓
+CLI output (no broadcast)
 ---
 
 ### Scan for dust UTXOs
@@ -175,6 +186,9 @@ Found 3 dust UTXOs to sweep:
 ### Sweep — per-UTXO (default, most private)
 
 Each dust UTXO is swept in its own separate transaction. No address linking.
+Most tools optimize for efficiency
+I optimize for privacy
+Dust attacks are privacy attacks, not just fee problems
 
 ```bash
 dust-cleaner sweep
