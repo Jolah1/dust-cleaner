@@ -2,12 +2,11 @@
 
 ## Project Overview
 A Bitcoin CLI tool that detects dust attack UTXOs in a Bitcoin Core wallet
-and sweeps them safely using PSBTs (BIP174). Built in Rust.
-
-Project idea: https://github.com/0xB10C/project-ideas/issues/13
+and sweeps them safely using PSBTs (BIP174).
 
 ---
 
+## Month 1
 
 ### Week 1 — Research & Concepts
 
@@ -37,6 +36,7 @@ everything into a fresh address.
 - Dust attack explainer: https://www.investopedia.com/terms/d/dusting-attack.asp
 - rust-bitcoin docs: https://docs.rs/bitcoin/latest/bitcoin/
 - bitcoincore-rpc crate: https://docs.rs/bitcoincore-rpc/latest/bitcoincore_rpc/
+- Disposing of dust attack UTXOs: https://delvingbitcoin.org/t/disposing-of-dust-attack-utxos/2215/
 
 ---
 
@@ -48,6 +48,7 @@ everything into a fresh address.
 
 Set up a separate regtest config to avoid conflicting with my existing signet
 node used for BOSS challenges:
+
 ```
 ~/.bitcoin/regtest-dev/bitcoin.conf
 regtest=1
@@ -74,11 +75,7 @@ for utxo in utxos {
 }
 ```
 
-Simulated dust attacks on regtest by sending small amounts to my own addresses:
-```bash
-bitcoin-cli -regtest sendtoaddress <address> 0.000005
-bitcoin-cli -regtest sendtoaddress <address> 0.000003
-```
+Simulated dust attacks on regtest by sending small amounts to my own addresses.
 
 **Problems hit:**
 - `Invalid combination of -regtest, -signet` — existing bitcoin.conf had signet=1,
@@ -86,13 +83,12 @@ bitcoin-cli -regtest sendtoaddress <address> 0.000003
 - `rpcport only applies in [regtest] section` — fixed by moving rpcport under
   a [regtest] section header in the config
 - `Transaction amount too small` — 100 sats is below Bitcoin Core's own send
-  minimum, used 200 sats minimum instead
+  minimum, used 300 sats minimum instead
 
 **What I learned:**
 - Bitcoin Core only allows one network mode at a time
 - Config sections like [regtest] scope settings to specific networks
-- The coinbase UTXO needs 100 confirmations before it can be spent —
-  that's why we mine 101 blocks, not 100
+- The coinbase UTXO needs 100 confirmations before it can be spent
 
 ---
 
@@ -103,6 +99,7 @@ bitcoin-cli -regtest sendtoaddress <address> 0.000003
 **Architecture decision:** Use both lib.rs and separate module files.
 lib.rs declares and re-exports all modules as the public interface.
 Each module has a single responsibility.
+
 ```
 src/
 ├── main.rs          # CLI entry point only
@@ -115,27 +112,9 @@ src/
 └── types.rs         # owned Utxo type for testing
 ```
 
-**Why this structure?**
-- Logic in lib.rs is testable without running the CLI
-- Each file has one job — easier to reason about
-- Follows the same pattern as real Bitcoin projects like rust-bitcoin and BDK
-
-**Dust detection logic:**
-```rust
-pub fn is_dust(amount_sats: u64, threshold: u64) -> bool {
-    amount_sats < threshold
-}
-```
-
-Simple but correct. The threshold comes from the caller — either the user's
-custom value or the per-script-type default.
-
 **CLI design decision:** Use CLI arguments for credentials, not a .env file.
 Real Bitcoin tools like bitcoin-cli itself work this way. Credentials never
 touch the filesystem.
-```bash
-dust-cleaner --rpc-user  --rpc-pass scan
-```
 
 **First commit pushed:** Basic scan working, UTXOs printing to terminal,
 clean/dust separation visible.
@@ -160,15 +139,8 @@ Use the largest clean UTXO as the primary funder (first input), then add
 all dust UTXOs as additional mandatory inputs. Set the output amount to the
 funder's full value and use subtractFeeFromOutputs so Bitcoin Core calculates
 the exact fee automatically.
-```rust
-// funder first, then dust
-let mut all_inputs = vec![funder_input];
-for utxo in dust_utxos {
-    all_inputs.push(dust_input);
-}
-```
 
-**First successful sweep:** txid confirmed on regtest:
+**First successful sweep txid confirmed on regtest:**
 ```
 c9bceda90c250fddad5348649de5a36fcfcb7fe081fe721c19da77837b6696fc
 ```
@@ -183,6 +155,7 @@ Verified with decodepsbt that all 8 inputs were present (1 funder + 7 dust).
 
 ---
 
+## Month 2
 
 ### Week 5 — Polish & User Experience
 
@@ -192,34 +165,21 @@ summary output, and safe credential handling.
 **Graceful error handling added:**
 
 Instead of crashing with raw RPC errors, the tool now shows helpful messages:
+
 ```
 Error: Could not connect to Bitcoin Core. Is your node running?
 Tip: bitcoind -conf=/home/$USER/.bitcoin/regtest-dev/bitcoin.conf ...
 
 Error: No wallet loaded.
-Tip: bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass loadwallet "testwallet"
+Tip: bitcoin-cli -rpcport=<port> -rpcuser=<user> -rpcpassword=<pass> loadwallet <walletname>
 ```
 
-Implemented by matching on the error message string in scanner.rs:
-```rust
-if msg.contains("Connection refused") {
-    anyhow::anyhow!("Could not connect to Bitcoin Core...")
-} else if msg.contains("No wallet") {
-    anyhow::anyhow!("No wallet loaded...")
-}
-```
-
-**Scan summary line added:**
-```
-─────────────────────────────────────────
-📊 Summary
-   Total UTXOs:    6
-   Dust UTXOs:     3 (1600 sats)
-   Clean UTXOs:    3 (14999975400 sats)
-   Dust threshold: 1000 sats
-   💡 Run 'sweep' to consolidate dust into a single UTXO
-─────────────────────────────────────────
-```
+**Scan summary line added showing:**
+- Total UTXOs found
+- Dust UTXOs count and total value
+- Clean UTXOs count and total value
+- Active threshold
+- Prompt to run sweep if dust detected
 
 **README and design doc written:**
 - README.md: installation, usage examples, configuration table
@@ -236,18 +196,9 @@ if msg.contains("Connection refused") {
 ListUnspentResultEntry from bitcoincore-rpc — awkward and tightly coupled
 to the external crate's internals.
 
-**Solution:** Created our own Utxo type in types.rs:
-```rust
-pub struct Utxo {
-    pub txid: String,
-    pub vout: u32,
-    pub amount_sats: u64,
-    pub address: Option<String>,
-}
-```
-
-And a parallel classify_owned_utxos function that operates on our type.
-This decouples test logic from the RPC crate entirely.
+**Solution:** Created our own Utxo type in types.rs and a parallel
+classify_owned_utxos function that operates on our type. This decouples
+test logic from the RPC crate entirely.
 
 **Tests written (15 total):**
 - test_is_dust_default_threshold
@@ -306,40 +257,113 @@ conservative.
 
 **--threshold flag** made optional. When not provided, per-type thresholds
 apply automatically. When provided, it overrides all per-type thresholds.
-```bash
-# Smart per-type detection
-dust-cleaner --rpc-user  --rpc-pass scan
-
-# Override with custom threshold
-dust-cleaner --rpc-user --rpc-pass --threshold 1000 scan
-```
 
 ---
 
-### Week 8 — Dry Run & Final Polish
+### Week 7 (continued) — OP_RETURN Sweep Method
 
-**Goals:** Add --dry-run flag, JOURNAL.md, screenshots in README.
+**Goals:** Add OP_RETURN sweep method to burn dust to miner fees.
 
-**--dry-run implementation:**
-Shows a preview of the sweep without creating a PSBT. Estimates fee
-based on input count and script type sizes:
+**Why OP_RETURN:**
+Instead of consolidating dust to a new address (which creates a change
+output and maintains an on-chain presence), the OP_RETURN method burns
+the entire dust value to miner fees. The output contains "ash" (0x617368)
+as a nod to "ashes to ashes, dust to dust."
+
+**Implementation:**
 ```
-🔍 Dry Run — no PSBT created
-
-   Dust inputs:       3
-   Total dust:        1600 sats
-   Funder UTXO:       5000000000 sats
-   Estimated fee:     626 sats
-   Estimated output:  5000000974 sats
-
-   Run without --dry-run to create the PSBT.
+Inputs:  funder UTXO + dust UTXOs
+Outputs: OP_RETURN "ash" (0 sats) + change back to wallet
+Fees:    subtracted from change output automatically
 ```
 
-Fee estimation formula:
+**Referenced:** https://delvingbitcoin.org/t/disposing-of-dust-attack-utxos/2215/2
+
+---
+
+### Week 7 (continued) — Environment Variables & CI
+
+**Goals:** Make credentials easier to manage, add CI pipeline.
+
+**Environment variable support added:**
+Users can now set credentials once per session:
+```bash
+export DUST_RPC_USER=user
+export DUST_RPC_PASS=pass
+dust-cleaner scan  # no credentials needed
+```
+
+Implemented using clap's `env` feature:
 ```rust
-let estimated_vbytes = (total_inputs * 68) + 31 + 10;
-let estimated_fee_sats = estimated_vbytes * 2; // 2 sat/vbyte
+#[arg(long, env = "DUST_RPC_USER")]
+pub rpc_user: String,
 ```
+
+**CI pipeline added** (.github/workflows/rust.yml):
+- Test job: cargo build + cargo test
+- Clippy job: cargo clippy -- -D warnings
+- Format job: cargo fmt --check
+
+All 3 jobs pass on every push to main.
+
+---
+
+### Week 8 — Privacy Fix: Per-UTXO Default Sweep
+
+**Goals:** Fix the address linking problem identified by @haris in the
+BOSS 2026 Discord.
+
+**The problem:**
+The original sweep batched all dust UTXOs into a single transaction:
+```
+Input 1: dust from address A ─┐
+Input 2: dust from address B ─┼─→ OP_RETURN
+Input 3: dust from address C ─┘
+```
+This links all three addresses on-chain — exactly what a dust attack exploits.
+
+**The fix:**
+Changed the default sweep behavior to create one transaction per dust UTXO:
+```
+Tx 1: dust from address A → OP_RETURN  (separate)
+Tx 2: dust from address B → OP_RETURN  (separate)
+Tx 3: dust from address C → OP_RETURN  (separate)
+```
+
+Added `--batch` flag for users who explicitly want the old behavior:
+```bash
+dust-cleaner sweep           # default: per-UTXO, most private
+dust-cleaner sweep --batch   # opt-in: batch, faster but links addresses
+```
+
+Also changed the default method from `consolidate` to `op-return` since
+OP_RETURN is the more privacy-preserving option.
+
+**PR:** https://github.com/Jolah1/dust-cleaner/pull/10
+
+---
+
+### Week 8 (continued) — ANYONECANPAY|NONE Investigation
+
+**Goals:** Research and attempt to implement ANYONECANPAY|NONE sighash
+for maximum blockspace efficiency as discussed in the Delving Bitcoin thread.
+
+**What ANYONECANPAY|NONE would do:**
+- Each input signs only itself (ANYONECANPAY)
+- Signer commits to no outputs (NONE)
+- Miners can batch thousands of dust sweeps permissionlessly
+- Maximum blockspace efficiency
+
+**Why we stopped:**
+Murch flagged on the bitcoindev mailing list that SIGHASH_NONE|ANYONECANPAY
+is unsafe — third parties can steal signed inputs as free fee subsidy at
+current fee rates.
+
+Reference: https://groups.google.com/g/bitcoindev/c/pr1z3_j8vTc/m/DqMYltO_AAAJ
+
+
+**Issue #9 closed** with this finding. The correct future implementation
+is ANYONECANPAY|ALL tracked in Issue #4.
 
 ---
 
@@ -366,6 +390,15 @@ in tests without a live node.
 **Solution:** Created owned Utxo type and parallel classify_owned_utxos
 function that works entirely with our own types.
 
+### Challenge 5: Address linking in sweep transactions
+The original batch sweep linked all dust addresses on-chain.
+**Solution:** Changed default to per-UTXO sweep. Added --batch as opt-in.
+
+### Challenge 6: ANYONECANPAY|NONE security vulnerability
+Attempted to implement NONE|ANYONECANPAY for maximum blockspace efficiency.
+**Solution:** Stopped after Murch flagged the security issue on bitcoindev.
+Tracked ALL|ANYONECANPAY as the safe future alternative in Issue #4.
+
 ---
 
 ## What I Learned
@@ -375,28 +408,51 @@ function that works entirely with our own types.
 - Why dust thresholds differ per script type (byte cost of spending)
 - How PSBTs enable offline signing workflows (BIP174)
 - The PSBT lifecycle: Creator → Updater → Signer → Finalizer → Extractor
-- How Bitcoin Core's coin selection works and how to override it
+- Why SIGHASH_NONE|ANYONECANPAY is unsafe (inputs can be stolen as fee subsidy)
+- The difference between ALL|ANYONECANPAY and NONE|ANYONECANPAY
+- Why per-UTXO sweeping prevents address linking vs batch sweeping
 
 **Rust:**
 - Module system: lib.rs as public interface + separate module files
 - Error handling with anyhow and custom error messages
-- CLI design with clap derive macros
+- CLI design with clap derive macros including env var support
 - Writing testable code by owning your types
-- Why tight coupling to external crate types makes testing hard
+- Lifetime elision rules (clippy caught needless_lifetimes)
 
-**Software engineering:**
-- Build iteratively — get data flowing first, add logic around it
-- Never store credentials in code or config files
-- Graceful error messages matter more than raw error dumps
-- Document your decisions, not just your code
+**Open source:**
+- Importance of reading mailing lists (bitcoindev) alongside GitHub issues
+- How to engage with the Bitcoin developer community constructively
+- Cross-referencing the BIP draft for alignment
+- The value of flagging security issues before shipping them
+
+---
+
+## Community Engagement
+
+- Referenced the Delving Bitcoin discussion throughout implementation
+- Received feedback from @haris in BOSS Discord on address linking issue
+- Implemented the fix (per-UTXO sweep) based on community feedback
+- Stopped ANYONECANPAY|NONE implementation after security finding
+- Tracked the ddust BIP PR: https://github.com/bitcoin/bips/pull/2150
+
+---
+
+## Open Issues
+
+- **Issue #4:** feat: implement ANYONECANPAY|ALL sighash for OP_RETURN dust sweep
+  - The safe sighash type per Murch's feedback
+  - Requires lower-level rust-bitcoin construction
+  - Miners can batch permissionlessly without security risk
 
 ---
 
 ## Future Improvements
 
-- OP_RETURN sweep method: burn dust to fees with no output (more private)
-- Mempool batching: combine with unconfirmed sweep transactions to save blockspace
-- Staggered broadcast: schedule sweeps with random delays to prevent timing correlation
-- BIP329 label export: tag swept UTXOs as dust-attack in Sparrow-compatible format
-- Hardware wallet support: export PSBTs for Ledger/Coldcard/Trezor via Sparrow
-- Address clustering heuristics: score dust UTXOs by attack likelihood
+- **ANYONECANPAY|ALL sighash** — safe miner-batchable sweep (Issue #4)
+- **Staggered broadcast** — random delays between per-UTXO broadcasts
+  to prevent timing correlation
+- **BIP329 label export** — tag swept UTXOs in Sparrow-compatible format
+- **Hardware wallet support** — export PSBTs for Ledger/Coldcard/Trezor
+- **Address clustering heuristics** — score dust UTXOs by attack likelihood
+- **Watch-only wallet support** — scan without a hot wallet
+- **Private broadcast integration** — Bitcoin Core v31 privatebroadcast flag

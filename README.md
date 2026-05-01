@@ -31,8 +31,6 @@ Options:
 
 ## Demo
 
-Example of scanning for dust UTXOs and performing a sweep:
-
 [![asciicast](https://asciinema.org/a/cbuBIDQR7o8jMv9n.svg)](https://asciinema.org/a/cbuBIDQR7o8jMv9n)
 
 ---
@@ -46,6 +44,7 @@ Dust amounts vary by script type — too small to spend economically on their ow
 **Further reading:**
 - [Dust attack explained](https://www.investopedia.com/terms/d/dusting-attack.asp)
 - [Disposing of dust attack UTXOs — Delving Bitcoin](https://delvingbitcoin.org/t/disposing-of-dust-attack-utxos/2215/)
+- [Dust UTXO Disposal Protocol — BIP draft](https://github.com/bitcoin/bips/pull/2150)
 - [BIP174 — Partially Signed Bitcoin Transactions](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki)
 
 ---
@@ -56,8 +55,8 @@ Dust amounts vary by script type — too small to spend economically on their ow
 2. Scans your wallet for UTXOs below the dust threshold
 3. Classifies UTXOs using **per-script-type thresholds** (or a custom threshold you provide)
 4. Shows a dry-run preview of the sweep before committing
-5. Builds a PSBT that sweeps all dust UTXOs in a single transaction
-6. Burn sweeps via OP_RETURN
+5. By default, sweeps **one UTXO per transaction** to prevent address linking
+6. Two sweep methods: consolidate to a fresh address or burn via OP_RETURN
 
 ---
 
@@ -104,9 +103,10 @@ export DUST_RPC_URL=http://127.0.0.1:18443
 export DUST_RPC_USER=user
 export DUST_RPC_PASS=pass
 
+# No credentials needed on every command
 dust-cleaner scan
 dust-cleaner sweep --dry-run
-dust-cleaner sweep --method op-return
+dust-cleaner sweep
 ```
 
 ---
@@ -159,7 +159,8 @@ Found 3 dust UTXOs to sweep:
 
 🔍 Dry Run — no PSBT created
 
-   Method:            Consolidate
+   Method:            OpReturn
+   Mode:              per-UTXO
    Dust inputs:       3
    Total dust:        1600 sats
    Funder UTXO:       5000000000 sats
@@ -171,7 +172,9 @@ Found 3 dust UTXOs to sweep:
 
 ---
 
-### Sweep — consolidate dust to a fresh address
+### Sweep — per-UTXO (default, most private)
+
+Each dust UTXO is swept in its own separate transaction. No address linking.
 
 ```bash
 dust-cleaner sweep
@@ -179,44 +182,60 @@ dust-cleaner sweep
 
 Example output:
 ```
-📎 Method: consolidate — dust swept to fresh address
+🔒 Mode: per-UTXO (default) — each dust UTXO swept separately
+   No address linking. Use --batch to sweep all at once.
 
-📊 Sweep Summary:
-   Dust inputs:  3
-   Total dust:   1600 sats
+📊 Generated 3 PSBTs (one per dust UTXO):
 
-🧹 Sweep PSBT (base64):
-cHNidP8BA...
+─── PSBT 1 of 3 ───
+   Address:    bcrt1q60z...
+   Dust:       500 sats
+   PSBT:       cHNidP8BA...
 
-💡 Next steps:
-   Inspect: bitcoin-cli decodepsbt <psbt>
-   Sign:    bitcoin-cli walletprocesspsbt <psbt>
-   Send:    bitcoin-cli sendrawtransaction <hex>
+─── PSBT 2 of 3 ───
+   Address:    bcrt1qdpl...
+   Dust:       300 sats
+   PSBT:       cHNidP8BA...
+
+─── PSBT 3 of 3 ───
+   Address:    bcrt1qr0e...
+   Dust:       800 sats
+   PSBT:       cHNidP8BA...
+
+💡 Sign and broadcast each PSBT separately:
+   Sign: bitcoin-cli walletprocesspsbt <psbt>
+   Send: bitcoin-cli sendrawtransaction <hex>
+
+⚠️  Broadcast at different times to prevent timing correlation.
 ```
 
 ---
 
-### Sweep — OP_RETURN (burn dust to miner fees)
+### Sweep — batch mode (opt-in, faster but links addresses)
 
-The most private option — dust is burned entirely to miner fees via an
-OP_RETURN output containing `"ash"` (ashes to ashes, dust to dust 🪦).
-No consolidation output, no address linkage.
+```bash
+dust-cleaner sweep --batch
+```
+
+> ⚠️ **Privacy warning:** Batching dust UTXOs from multiple addresses into
+> a single transaction links those addresses on-chain. Only use this if
+> UTXO set reduction matters more than privacy for your use case.
+
+---
+
+### Sweep — OP_RETURN method (burn dust to miner fees)
 
 ```bash
 dust-cleaner sweep --method op-return
 ```
 
+The OP_RETURN output contains `"ash"` (0x617368) — ashes to ashes, dust to dust 🪦.
+No consolidation output, no change address, all dust value goes to miner fees.
+
 Example output:
 ```
 🔥 Method: op-return — dust burned to miner fees
    Output: OP_RETURN ("ash" — ashes to ashes, dust to dust)
-
-📊 Sweep Summary:
-   Dust inputs:  3
-   Total dust:   1600 sats
-
-🧹 Sweep PSBT (base64):
-cHNidP8BA...
 ```
 
 ---
@@ -227,11 +246,11 @@ cHNidP8BA...
 # Override with a custom threshold in sats
 dust-cleaner --threshold 1000 scan
 
-# Using env var instead
+# Using env var
 export DUST_THRESHOLD=1000
 dust-cleaner scan
 
-# Custom RPC URL (mainnet default port)
+# Mainnet node
 dust-cleaner --rpc-url http://127.0.0.1:8332 scan
 ```
 
@@ -252,6 +271,17 @@ CLI flags always override environment variables when explicitly provided.
 
 ---
 
+## Sweep Methods
+
+| Method | Command | Privacy | Address Linking | Output |
+|--------|---------|---------|----------------|--------|
+| Per-UTXO OP_RETURN | `sweep` (default) | ✅ highest | ❌ none | OP_RETURN "ash" |
+| Batch OP_RETURN | `sweep --batch --method op-return` | ⚠️ medium | ✅ yes | OP_RETURN "ash" |
+| Per-UTXO consolidate | `sweep --method consolidate` | ✅ high | ❌ none | fresh address |
+| Batch consolidate | `sweep --batch --method consolidate` | ❌ lowest | ✅ yes | fresh address |
+
+---
+
 ## Testing
 
 Run unit tests:
@@ -267,8 +297,6 @@ Currently 15 tests covering:
 - Smart threshold with user override
 
 ### Test on regtest
-
-Set up a regtest node and simulate a dust attack:
 
 ```bash
 # Create a separate regtest config
@@ -306,7 +334,7 @@ export DUST_RPC_PASS=pass
 dust-cleaner scan
 dust-cleaner sweep --dry-run
 dust-cleaner sweep
-dust-cleaner sweep --method op-return
+dust-cleaner sweep --batch --method op-return
 ```
 
 ---
@@ -332,16 +360,6 @@ dust-cleaner/
 
 ---
 
-## Resources
-
-- [BIP174 — Partially Signed Bitcoin Transactions](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki)
-- [BIP370 — PSBTv2](https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki)
-- [Bitcoin Core RPC documentation](https://developer.bitcoin.org/reference/rpc/)
-- [rust-bitcoin crate](https://docs.rs/bitcoin/latest/bitcoin/)
-- [bitcoincore-rpc crate](https://docs.rs/bitcoincore-rpc/latest/bitcoincore_rpc/)
-- [Disposing of dust attack UTXOs — Delving Bitcoin](https://delvingbitcoin.org/t/disposing-of-dust-attack-utxos/2215/)
-
----
 
 ## License
 
