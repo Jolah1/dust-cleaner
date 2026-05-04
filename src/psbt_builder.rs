@@ -1,14 +1,6 @@
 use bitcoincore_rpc::bitcoincore_rpc_json::ListUnspentResultEntry;
 use bitcoincore_rpc::{Client, RpcApi};
 
-use bitcoin::hashes::Hash;
-use bitcoin::sighash::{EcdsaSighashType, SighashCache};
-use bitcoin::{
-    absolute::LockTime, transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, Transaction,
-    TxIn, TxOut, Txid, Witness,
-};
-use std::str::FromStr;
-
 pub struct SweepResult {
     pub psbt: String,
     pub dust_input_count: usize,
@@ -263,12 +255,12 @@ fn build_anyonecanpay_all_tx(
     client: &Client,
     utxo: &ListUnspentResultEntry,
 ) -> anyhow::Result<AnyoneCanPayResult> {
-    // Step 1: Get the full previous transaction to extract scriptPubKey
+    // Step 1: Get the previous transaction scriptPubKey via verbose getrawtransaction
     let prev_tx_info = client.call::<serde_json::Value>(
         "getrawtransaction",
         &[
             serde_json::json!(utxo.txid.to_string()),
-            serde_json::json!(true), // verbose = true
+            serde_json::json!(true),
         ],
     )?;
 
@@ -276,89 +268,66 @@ fn build_anyonecanpay_all_tx(
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Could not get scriptPubKey"))?;
 
-    let script_pubkey = ScriptBuf::from_hex(script_pubkey_hex)?;
-    let value = Amount::from_sat(utxo.amount.to_sat());
-
-    // Step 2: Build the input — the dust UTXO
-    let txid = Txid::from_str(&utxo.txid.to_string())?;
-    let outpoint = OutPoint {
-        txid,
-        vout: utxo.vout,
-    };
-
-    let input = TxIn {
-        previous_output: outpoint,
-        script_sig: ScriptBuf::new(),
-        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-        witness: Witness::new(),
-    };
-
-    // Step 3: OP_RETURN output — "ash" = 0x617368
-    // Value is 0 — all dust value goes to miner as fees
-    let op_return_script = ScriptBuf::new_op_return([0x61, 0x73, 0x68]);
-
-    let output = TxOut {
-        value: Amount::ZERO,
-        script_pubkey: op_return_script,
-    };
-
-    let mut tx = Transaction {
-        version: Version::TWO,
-        lock_time: LockTime::ZERO,
-        input: vec![input],
-        output: vec![output],
-    };
-
-    // Step 4: Get address string for dumpprivkey
     let address = utxo
         .address
         .as_ref()
         .map(|a| a.clone().assume_checked().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
-    // Step 5: Get private key from wallet
-    let wif = client.call::<serde_json::Value>("dumpprivkey", &[serde_json::json!(address)])?;
+    // Step 3: Create the raw transaction hex
+    let inputs = serde_json::json!([{
+        "txid": utxo.txid.to_string(),
+        "vout": utxo.vout,
+        "sequence": 4294967293u32
+    }]);
 
-    let wif_str = wif.as_str().ok_or_else(|| {
-        anyhow::anyhow!(
-            "Could not get private key.\nNote: wallet must have private keys (not watch-only)"
-        )
-    })?;
+    let outputs = serde_json::json!({
+        "data": "617368"  // "ash" in hex
+    });
 
-    let private_key = bitcoin::PrivateKey::from_wif(wif_str)?;
-    let secp = bitcoin::secp256k1::Secp256k1::new();
-    let public_key = private_key.public_key(&secp);
-
-    // Step 6: Sign with SIGHASH_ALL | SIGHASH_ANYONECANPAY
-    // ALL  — commits to all outputs (OP_RETURN cannot be changed)
-    // ANYONECANPAY — signs only this input (miners can add more inputs)
-    let sighash_type = EcdsaSighashType::AllPlusAnyoneCanPay;
-    let mut sighash_cache = SighashCache::new(&tx);
-
-    let sighash = sighash_cache.p2wpkh_signature_hash(
-        0, // input index
-        &script_pubkey,
-        value,
-        sighash_type,
+    let raw_tx_hex = client.call::<serde_json::Value>(
+        "createrawtransaction",
+        &[inputs, serde_json::json!([outputs])],
     )?;
 
-    let message = bitcoin::secp256k1::Message::from_digest(sighash.to_byte_array());
-    let signature = secp.sign_ecdsa(&message, &private_key.inner);
+    let raw_tx_str = raw_tx_hex
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Could not create raw transaction"))?;
 
-    // Step 7: Build witness
-    let mut sig_bytes = signature.serialize_der().to_vec();
-    sig_bytes.push(sighash_type as u8);
+    // Step 4: Sign with SIGHASH_ALL|ANYONECANPAY using wallet
+    // sighashtype 0x83 = SIGHASH_ALL | SIGHASH_ANYONECANPAY
+    let prevtxs = serde_json::json!([{
+        "txid": utxo.txid.to_string(),
+        "vout": utxo.vout,
+        "scriptPubKey": script_pubkey_hex,
+        "amount": utxo.amount.to_btc()
+    }]);
 
-    tx.input[0].witness.push(sig_bytes);
-    tx.input[0].witness.push(public_key.to_bytes());
+    let signed = client.call::<serde_json::Value>(
+        "signrawtransactionwithwallet",
+        &[
+            serde_json::json!(raw_tx_str),
+            prevtxs,
+            serde_json::json!("ALL|ANYONECANPAY"),
+        ],
+    )?;
 
-    // Step 8: Serialize to hex
-    let raw_tx_hex = hex::encode(bitcoin::consensus::serialize(&tx));
+    let complete = signed["complete"].as_bool().unwrap_or(false);
+
+    if !complete {
+        let errors = &signed["errors"];
+        anyhow::bail!("Signing incomplete: {}", errors);
+    }
+
+    let signed_hex = signed["hex"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("No signed hex returned"))?
+        .to_string();
 
     Ok(AnyoneCanPayResult {
         address,
         dust_sats: utxo.amount.to_sat(),
-        raw_tx_hex,
+        raw_tx_hex: signed_hex,
     })
 }
 
