@@ -150,6 +150,31 @@ fn handle_sweep(
                 println!("🔥 Method: op-return — dust burned to miner fees");
                 psbt_builder::build_op_return_psbt(client, &dust_utxos, &clean_utxos)?
             }
+
+            SweepMethod::AnyoneCanPay => {
+                println!("\n⚡ Method: anyonecanpay|all — maximum privacy");
+                println!("   Sighash: SIGHASH_ALL | SIGHASH_ANYONECANPAY");
+                println!("   Each input signed independently");
+                println!("   Outputs locked — miners can add inputs but not change outputs");
+                println!("   Miners can batch permissionlessly\n");
+
+                let results = psbt_builder::build_anyonecanpay_all_txs(client, &dust_utxos)?;
+
+                println!("📊 Generated {} signed transactions:\n", results.len());
+                for (i, result) in results.iter().enumerate() {
+                    println!("─── Tx {} of {} ───", i + 1, results.len());
+                    println!("   Address: {}", result.address);
+                    println!("   Dust:    {} sats → miner fees", result.dust_sats);
+                    println!("   Hex:     {}", result.raw_tx_hex);
+                    println!();
+                }
+
+                println!("💡 Broadcast each transaction:");
+                println!("   bitcoin-cli sendrawtransaction <hex>");
+                println!("\n⚠️  Broadcast at different times to prevent timing correlation.");
+                println!("   Miners may batch these transactions together automatically.");
+                return Ok(());
+            }
         };
 
         println!("\n📊 Sweep Summary:");
