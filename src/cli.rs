@@ -30,6 +30,8 @@ pub enum SweepMethod {
     Consolidate,
     /// Burn dust to miner fees via OP_RETURN (more private)
     OpReturn,
+    /// Burn dust using ANYONECANPAY|ALL sighash (most private, miner batchable)
+    AnyoneCanPay,
 }
 
 #[derive(Subcommand)]

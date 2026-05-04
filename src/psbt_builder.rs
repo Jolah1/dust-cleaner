@@ -245,3 +245,104 @@ pub fn build_per_utxo_psbts(
 
     Ok(results)
 }
+pub struct AnyoneCanPayResult {
+    pub address: String,
+    pub dust_sats: u64,
+    pub raw_tx_hex: String,
+}
+
+fn build_anyonecanpay_all_tx(
+    client: &Client,
+    utxo: &ListUnspentResultEntry,
+) -> anyhow::Result<AnyoneCanPayResult> {
+    // Step 1: Get the previous transaction scriptPubKey via verbose getrawtransaction
+    let prev_tx_info = client.call::<serde_json::Value>(
+        "getrawtransaction",
+        &[
+            serde_json::json!(utxo.txid.to_string()),
+            serde_json::json!(true),
+        ],
+    )?;
+
+    let script_pubkey_hex = prev_tx_info["vout"][utxo.vout as usize]["scriptPubKey"]["hex"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Could not get scriptPubKey"))?;
+
+    let address = utxo
+        .address
+        .as_ref()
+        .map(|a| a.clone().assume_checked().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Step 3: Create the raw transaction hex
+    let inputs = serde_json::json!([{
+        "txid": utxo.txid.to_string(),
+        "vout": utxo.vout,
+        "sequence": 4294967293u32
+    }]);
+
+    let outputs = serde_json::json!({
+        "data": "617368"  // "ash" in hex
+    });
+
+    let raw_tx_hex = client.call::<serde_json::Value>(
+        "createrawtransaction",
+        &[inputs, serde_json::json!([outputs])],
+    )?;
+
+    let raw_tx_str = raw_tx_hex
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Could not create raw transaction"))?;
+
+    // Step 4: Sign with SIGHASH_ALL|ANYONECANPAY using wallet
+    // sighashtype 0x83 = SIGHASH_ALL | SIGHASH_ANYONECANPAY
+    let prevtxs = serde_json::json!([{
+        "txid": utxo.txid.to_string(),
+        "vout": utxo.vout,
+        "scriptPubKey": script_pubkey_hex,
+        "amount": utxo.amount.to_btc()
+    }]);
+
+    let signed = client.call::<serde_json::Value>(
+        "signrawtransactionwithwallet",
+        &[
+            serde_json::json!(raw_tx_str),
+            prevtxs,
+            serde_json::json!("ALL|ANYONECANPAY"),
+        ],
+    )?;
+
+    let complete = signed["complete"].as_bool().unwrap_or(false);
+
+    if !complete {
+        let errors = &signed["errors"];
+        anyhow::bail!("Signing incomplete: {}", errors);
+    }
+
+    let signed_hex = signed["hex"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("No signed hex returned"))?
+        .to_string();
+
+    Ok(AnyoneCanPayResult {
+        address,
+        dust_sats: utxo.amount.to_sat(),
+        raw_tx_hex: signed_hex,
+    })
+}
+
+pub fn build_anyonecanpay_all_txs(
+    client: &Client,
+    dust_utxos: &[ListUnspentResultEntry],
+) -> anyhow::Result<Vec<AnyoneCanPayResult>> {
+    if dust_utxos.is_empty() {
+        anyhow::bail!("No dust UTXOs to sweep");
+    }
+
+    let mut results = vec![];
+    for utxo in dust_utxos {
+        let result = build_anyonecanpay_all_tx(client, utxo)?;
+        results.push(result);
+    }
+    Ok(results)
+}

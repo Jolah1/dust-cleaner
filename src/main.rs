@@ -111,6 +111,48 @@ fn handle_sweep(
         );
     }
 
+    // Handle AnyoneCanPay separately — no funder needed, no batch/per-UTXO split
+    if let SweepMethod::AnyoneCanPay = method {
+        if dry_run {
+            let total_dust: u64 = dust_utxos.iter().map(|u| u.amount.to_sat()).sum();
+            println!("\n🔍 Dry Run — no transaction created\n");
+            println!("   Method:        anyonecanpay|all");
+            println!("   Dust UTXOs:    {}", dust_utxos.len());
+            println!(
+                "   Total dust:    {} sats → all goes to miner fees",
+                total_dust
+            );
+            println!("   No funder needed — dust value itself is the fee");
+            println!("   Sighash:       SIGHASH_ALL | SIGHASH_ANYONECANPAY");
+            println!("\n   Run without --dry-run to generate signed transactions.");
+            return Ok(());
+        }
+
+        println!("\n⚡ Method: anyonecanpay|all — maximum privacy");
+        println!("   Sighash: SIGHASH_ALL | SIGHASH_ANYONECANPAY");
+        println!("   Each input signed independently — no address linking");
+        println!("   Outputs locked — miners can add inputs but not change outputs");
+        println!("   Miners can batch these transactions permissionlessly\n");
+
+        let results = psbt_builder::build_anyonecanpay_all_txs(client, &dust_utxos)?;
+
+        println!("📊 Generated {} signed transactions:\n", results.len());
+        for (i, result) in results.iter().enumerate() {
+            println!("─── Tx {} of {} ───", i + 1, results.len());
+            println!("   Address: {}", result.address);
+            println!("   Dust:    {} sats → miner fees", result.dust_sats);
+            println!("   Hex:     {}", result.raw_tx_hex);
+            println!();
+        }
+
+        println!("💡 Broadcast each transaction:");
+        println!("   bitcoin-cli -rpcport=18443 -rpcuser=user -rpcpassword=pass sendrawtransaction <hex>");
+        println!("\n⚠️  Broadcast at different times to prevent timing correlation.");
+        println!("   Miners may batch these transactions together automatically.");
+        return Ok(());
+    }
+
+    // All other methods — batch vs per-UTXO split
     if !batch {
         println!("\n🔒 Mode: per-UTXO (default) — each dust UTXO swept separately");
         println!("   No address linking. Use --batch to sweep all at once.\n");
@@ -140,7 +182,6 @@ fn handle_sweep(
     }
 
     if batch {
-        // existing batch behavior
         let result = match method {
             SweepMethod::Consolidate => {
                 println!("📎 Method: consolidate — dust swept to fresh address");
@@ -150,6 +191,7 @@ fn handle_sweep(
                 println!("🔥 Method: op-return — dust burned to miner fees");
                 psbt_builder::build_op_return_psbt(client, &dust_utxos, &clean_utxos)?
             }
+            SweepMethod::AnyoneCanPay => unreachable!(),
         };
 
         println!("\n📊 Sweep Summary:");
@@ -162,14 +204,12 @@ fn handle_sweep(
         println!("   Sign:    bitcoin-cli walletprocesspsbt <psbt>");
         println!("   Send:    bitcoin-cli sendrawtransaction <hex>");
     } else {
-        // per-UTXO behavior — one PSBT per dust UTXO
         let results = psbt_builder::build_per_utxo_psbts(client, &dust_utxos, &clean_utxos)?;
 
         println!(
             "📊 Generated {} PSBTs (one per dust UTXO):\n",
             results.len()
         );
-
         for (i, (address, result)) in results.iter().enumerate() {
             println!("─── PSBT {} of {} ───", i + 1, results.len());
             println!("   Address:    {}", address);
